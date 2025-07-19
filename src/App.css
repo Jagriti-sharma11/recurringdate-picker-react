@@ -1,38 +1,64 @@
+/* src/App.css */
+
 .App {
-  text-align: center;
+  font-family: 'Inter', sans-serif;
+  max-width: 1000px; /* Optional: Limit max width for desktop view */
+  margin: 0 auto; /* Center the app */
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+/* Calendar Grid Styling */
+.calendar-grid .col-calendar-day {
+  /* Flexbox properties to ensure even distribution and centering */
+  flex: 0 0 calc(100% / 7); /* Each column takes exactly 1/7th of the row */
+  max-width: calc(100% / 7); /* Ensure max width is also 1/7th */
+  box-sizing: border-box; /* Include padding and border in the element's total width and height */
+  min-height: 40px; /* Minimum height for each cell to prevent squishing */
+  display: flex; /* Use flexbox for content alignment */
+  align-items: center; /* Vertically center content */
+  justify-content: center; /* Horizontally center content */
+  padding: 0.25rem; /* Small padding inside each cell */
+  margin: 0; /* Remove any default margins that might cause gaps */
+  border: 1px solid #e0e0e0; /* Light border for visual separation */
+  border-radius: 0.375rem; /* Tailwind's rounded-md equivalent */
+  overflow: hidden; /* Hide overflow if content is too large */
+  text-overflow: ellipsis; /* Add ellipsis if text overflows */
+  white-space: nowrap; /* Prevent text from wrapping */
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
+/* Adjust padding for day headers */
+.calendar-grid .fw-bold {
+    padding: 0.5rem 0.25rem; /* More padding for headers */
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+/* Specific styles for highlighted and bordered dates */
+.col-calendar-day.bg-primary {
+  background-color: #0d6efd !important; /* Bootstrap primary blue */
+  color: white !important;
 }
 
-.App-link {
-  color: #61dafb;
+.col-calendar-day.border-success {
+  border-color: #198754 !important; /* Bootstrap success green */
+  border-width: 2px !important;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* Ensure buttons in recurrence options are well-spaced */
+.btn-group .btn {
+    margin-right: 5px; /* Small margin between buttons */
+    margin-bottom: 5px; /* For wrapping on smaller screens */
+}
+.btn-group .btn:last-child {
+    margin-right: 0;
+}
+
+/* General card/section styling */
+.border.rounded {
+    border-color: #dee2e6 !important;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+/* Adjust form-select-sm for better inline alignment */
+.form-select-sm {
+  display: inline-block;
+  width: auto;
+  vertical-align: middle;
 }

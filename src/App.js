@@ -1,17 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, createContext, useContext, useEffect } from 'react';
+// import 'bootstrap/dist/css/bootstrap.min.css'; // REMOVED: Bootstrap CSS is loaded via CDN in public/index.html
+import './App.css'; // Import custom CSS for calendar styling
 
-// --- Bootstrap CSS CDN ---
-// Add this to your public/index.html <head> section for global Bootstrap styling:
-// <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" xintegrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
-// You might also want Bootstrap JS for some components, but for this, CSS is enough.
-// <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" xintegrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
-
-
-// --- Context Definition ---
-const RecurringDateContext = createContext();
-
-// --- Helper Functions for Date Calculations ---
-
+// --- Helper Functions (copied from App.test.js for consistency) ---
 /**
  * Formats a Date object to 'YYYY-MM-DD' string.
  * @param {Date} date
@@ -33,8 +24,11 @@ const formatDate = (date) => {
 const parseDate = (dateString) => {
   if (!dateString) return null;
   const [year, month, day] = dateString.split('-').map(Number);
-  // Using UTC to avoid timezone issues for date calculations
-  return new Date(Date.UTC(year, month - 1, day));
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (isNaN(date.getTime())) {
+    return null;
+  }
+  return date;
 };
 
 /**
@@ -49,7 +43,7 @@ const getNthDayOfWeekInMonth = (year, month, nth, dayOfWeek) => {
   let count = 0;
   for (let day = 1; day <= 31; day++) {
     const date = new Date(Date.UTC(year, month, day));
-    if (date.getUTCMonth() !== month) break; // Moved to next month
+    if (date.getUTCMonth() !== month) break;
     if (date.getUTCDay() === dayOfWeek) {
       count++;
       if (count === nth) {
@@ -75,127 +69,45 @@ const calculateRecurringDates = (options) => {
   const { recurrenceType, startDate, endDate, interval, selectedDaysOfWeek, monthlyPattern } = options;
   if (!startDate) return [];
 
-  const dates = [];
-  let currentDate = new Date(startDate.getTime()); // Start from the selected start date
-
-  while ((!endDate || currentDate <= endDate) && dates.length < 500) { // Limit to 500 dates to prevent infinite loops
-    let addDate = false;
-
-    switch (recurrenceType) {
-      case 'daily':
-        addDate = true;
-        break;
-      case 'weekly':
-        if (selectedDaysOfWeek.includes(currentDate.getUTCDay())) {
-          addDate = true;
-        }
-        break;
-      case 'monthly':
-        if (monthlyPattern.type === 'dayOfMonth' && monthlyPattern.day === currentDate.getUTCDate()) {
-          addDate = true;
-        } else if (monthlyPattern.type === 'nthDayOfWeek') {
-          const firstDayOfMonth = new Date(Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth(), 1));
-          let count = 0;
-          let tempDate = new Date(firstDayOfMonth.getTime());
-          while (tempDate.getUTCMonth() === currentDate.getUTCMonth()) {
-            if (tempDate.getUTCDay() === monthlyPattern.dayOfWeek) {
-              count++;
-            }
-            if (count === monthlyPattern.nth && tempDate.getUTCDate() === currentDate.getUTCDate()) {
-              addDate = true;
-              break;
-            }
-            tempDate.setUTCDate(tempDate.getUTCDate() + 1);
-          }
-        }
-        break;
-      case 'yearly':
-        if (currentDate.getUTCMonth() === startDate.getUTCMonth() && currentDate.getUTCDate() === startDate.getUTCDate()) {
-          addDate = true;
-        }
-        break;
-      default:
-        break;
-    }
-
-    if (addDate) {
-      dates.push(new Date(currentDate.getTime())); // Add a copy of the date
-    }
-
-    // Advance to the next date for checking
-    currentDate.setUTCDate(currentDate.getUTCDate() + 1);
-  }
-
-  // Filter and adjust dates based on interval and actual recurrence logic
   const finalDates = [];
-  // The original logic for `finalDates` after the first loop was a bit complex and might lead to
-  // inconsistencies depending on how `currentDate` was advanced in the first loop vs. the second.
-  // Let's simplify and ensure the interval logic is applied correctly from the start date.
+  let current = new Date(startDate.getTime());
+  const MAX_DATES = 500; // Safety limit
 
   if (recurrenceType === 'daily') {
-    let current = new Date(startDate.getTime());
-    while ((!endDate || current <= endDate) && finalDates.length < 500) {
+    while ((!endDate || current <= endDate) && finalDates.length < MAX_DATES) {
       finalDates.push(new Date(current.getTime()));
       current.setUTCDate(current.getUTCDate() + interval);
     }
   } else if (recurrenceType === 'weekly') {
-    let current = new Date(startDate.getTime());
-    // Find the first selected day on or after the start date
-    let firstValidDateFound = false;
-    while (!firstValidDateFound && current.getUTCFullYear() < startDate.getUTCFullYear() + 2) { // Limit search to avoid infinite loop
-        if (selectedDaysOfWeek.includes(current.getUTCDay()) && current >= startDate) {
-            firstValidDateFound = true;
-            break;
+    if (selectedDaysOfWeek.length === 0) {
+      return [];
+    }
+
+    for (const dayOfWeek of selectedDaysOfWeek) {
+      let currentDaySeries = new Date(startDate.getTime());
+      let safetyCounter = 0;
+      const MAX_SEARCH_DAYS = 365 * 2;
+
+      let firstOccurrence = null;
+      while (safetyCounter < MAX_SEARCH_DAYS) {
+        if (currentDaySeries.getUTCDay() === dayOfWeek && currentDaySeries >= startDate) {
+          firstOccurrence = new Date(currentDaySeries.getTime());
+          break;
         }
-        current.setUTCDate(current.getUTCDate() + 1);
-    }
+        currentDaySeries.setUTCDate(currentDaySeries.getUTCDate() + 1);
+        safetyCounter++;
+      }
 
-    if (!firstValidDateFound) return []; // No valid start day found within a reasonable range
-
-    // Now, generate dates based on interval and selected days
-    while ((!endDate || current <= endDate) && finalDates.length < 500) {
-        if (selectedDaysOfWeek.includes(current.getUTCDay())) {
-            finalDates.push(new Date(current.getTime()));
-        }
-        current.setUTCDate(current.getUTCDate() + 1); // Move to the next day
-        // If we've passed all selected days in the current week, advance by (interval - 1) weeks
-        // This logic needs to be carefully managed to avoid over-advancing or missing days.
-        // A simpler approach for weekly is to iterate day by day and check if it's a selected day.
-        // Then, after a full week, jump by (interval - 1) weeks.
-        // Let's refine this to be more precise for "Every X weeks on selected days".
-    }
-
-    // Re-implementing weekly recurrence more robustly:
-    finalDates.length = 0; // Clear previous dates
-    current = new Date(startDate.getTime());
-    // Adjust current to the first selected day of the week on or after startDate
-    while(current.getUTCDay() !== selectedDaysOfWeek[0] && current.getUTCFullYear() < startDate.getUTCFullYear() + 2) {
-        current.setUTCDate(current.getUTCDate() + 1);
-    }
-    if(current.getUTCFullYear() >= startDate.getUTCFullYear() + 2) return []; // Safety break
-
-    while ((!endDate || current <= endDate) && finalDates.length < 500) {
-      for (const dayIndex of selectedDaysOfWeek) {
-        let tempDate = new Date(current.getTime());
-        // Adjust tempDate to the correct day of the week within the current week interval
-        tempDate.setUTCDate(tempDate.getUTCDate() + (dayIndex - tempDate.getUTCDay() + 7) % 7);
-
-        if (tempDate >= startDate && (!endDate || tempDate <= endDate)) {
-          finalDates.push(new Date(tempDate.getTime()));
+      if (firstOccurrence) {
+        let dateToAdd = firstOccurrence;
+        while ((!endDate || dateToAdd <= endDate) && finalDates.length < MAX_DATES) {
+          finalDates.push(new Date(dateToAdd.getTime()));
+          dateToAdd.setUTCDate(dateToAdd.getUTCDate() + (interval * 7));
         }
       }
-      current.setUTCDate(current.getUTCDate() + (interval * 7)); // Advance by interval weeks
     }
-    // Sort and unique the dates as the above logic might add duplicates or out of order
-    const uniqueDates = Array.from(new Set(finalDates.map(d => d.toISOString().split('T')[0])))
-                            .map(d => parseDate(d))
-                            .filter(d => d >= startDate && (!endDate || d <= endDate))
-                            .sort((a, b) => a.getTime() - b.getTime());
-    return uniqueDates;
-
   } else if (recurrenceType === 'monthly') {
-    let current = new Date(startDate.getTime());
-    while ((!endDate || current <= endDate) && finalDates.length < 500) {
+    while ((!endDate || current <= endDate) && finalDates.length < MAX_DATES) {
       let targetDate = null;
       if (monthlyPattern.type === 'dayOfMonth') {
         targetDate = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), monthlyPattern.day));
@@ -206,19 +118,10 @@ const calculateRecurringDates = (options) => {
       if (targetDate && targetDate >= startDate && (!endDate || targetDate <= endDate) && targetDate.getUTCMonth() === current.getUTCMonth()) {
           finalDates.push(new Date(targetDate.getTime()));
       }
-      // Advance by interval months
       current.setUTCMonth(current.getUTCMonth() + interval);
     }
-    // Filter out dates before startDate and after endDate, and remove duplicates
-    const uniqueDates = Array.from(new Set(finalDates.map(d => d.toISOString().split('T')[0])))
-                            .map(d => parseDate(d))
-                            .filter(d => d >= startDate && (!endDate || d <= endDate))
-                            .sort((a, b) => a.getTime() - b.getTime());
-    return uniqueDates;
-
   } else if (recurrenceType === 'yearly') {
-    let current = new Date(startDate.getTime());
-    while ((!endDate || current <= endDate) && finalDates.length < 500) {
+    while ((!endDate || current <= endDate) && finalDates.length < MAX_DATES) {
       const targetDate = new Date(Date.UTC(current.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()));
       if (targetDate >= startDate && (!endDate || targetDate <= endDate)) {
         finalDates.push(new Date(targetDate.getTime()));
@@ -227,41 +130,51 @@ const calculateRecurringDates = (options) => {
     }
   }
 
-  // Ensure dates are unique and sorted, and within the range
   const uniqueDates = Array.from(new Set(finalDates.map(d => d.toISOString().split('T')[0])))
                             .map(d => parseDate(d))
-                            .filter(d => d >= startDate && (!endDate || d <= endDate))
+                            .filter(d => d && d >= startDate && (!endDate || d <= endDate))
                             .sort((a, b) => a.getTime() - b.getTime());
 
   return uniqueDates;
 };
 
+// --- Context API for State Management ---
+const RecurringDateContext = createContext();
 
-// --- Provider Component ---
 const RecurringDateProvider = ({ children }) => {
+  const today = new Date();
   const [recurrenceType, setRecurrenceType] = useState('daily');
-  const [startDate, setStartDate] = useState(parseDate(formatDate(new Date()))); // Default to today
+  const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(null);
   const [interval, setInterval] = useState(1);
-  const [selectedDaysOfWeek, setSelectedDaysOfWeek] = useState([]); // [0, 1, ..., 6] for Sun-Sat
-  const [monthlyPattern, setMonthlyPattern] = useState({ type: 'dayOfMonth', day: 1 }); // dayOfMonth or nthDayOfWeek
+  const [selectedDaysOfWeek, setSelectedDaysOfWeek] = useState([]); // For weekly
+  const [monthlyPattern, setMonthlyPattern] = useState({ type: 'dayOfMonth', day: today.getUTCDate() }); // For monthly
+
+  // State for generated dates
   const [generatedDates, setGeneratedDates] = useState([]);
 
-  // Effect to update generated dates whenever options change
+  // Effect to recalculate dates whenever options change
   useEffect(() => {
-    const options = {
+    const dates = calculateRecurringDates({
       recurrenceType,
       startDate,
       endDate,
       interval,
       selectedDaysOfWeek,
       monthlyPattern,
-    };
-    const calculatedDates = calculateRecurringDates(options);
-    setGeneratedDates(calculatedDates);
+    });
+    setGeneratedDates(dates);
   }, [recurrenceType, startDate, endDate, interval, selectedDaysOfWeek, monthlyPattern]);
 
-  const contextValue = useMemo(() => ({
+  // Effect to update monthly pattern day when start date changes
+  useEffect(() => {
+    if (startDate && monthlyPattern.type === 'dayOfMonth') {
+      setMonthlyPattern(prev => ({ ...prev, day: startDate.getUTCDate() }));
+    }
+  }, [startDate, monthlyPattern.type]);
+
+
+  const value = {
     recurrenceType, setRecurrenceType,
     startDate, setStartDate,
     endDate, setEndDate,
@@ -269,179 +182,135 @@ const RecurringDateProvider = ({ children }) => {
     selectedDaysOfWeek, setSelectedDaysOfWeek,
     monthlyPattern, setMonthlyPattern,
     generatedDates,
-  }), [recurrenceType, startDate, endDate, interval, selectedDaysOfWeek, monthlyPattern, generatedDates]);
+  };
 
   return (
-    <RecurringDateContext.Provider value={contextValue}>
+    <RecurringDateContext.Provider value={value}>
       {children}
     </RecurringDateContext.Provider>
   );
 };
 
-// --- Sub-Components ---
+// --- Child Components ---
 
 const RecurrenceOptions = () => {
-  const { recurrenceType, setRecurrenceType } = useContext(RecurringDateContext);
-
-  const options = [
-    { value: 'daily', label: 'Daily' },
-    { value: 'weekly', label: 'Weekly' },
-    { value: 'monthly', label: 'Monthly' },
-    { value: 'yearly', label: 'Yearly' },
-  ];
-
-  return (
-    <div className="d-flex justify-content-start mb-4 p-2 bg-light rounded">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          className={`btn me-2 ${
-            recurrenceType === option.value
-              ? 'btn-primary'
-              : 'btn-outline-primary'
-          }`}
-          onClick={() => setRecurrenceType(option.value)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-};
-
-const IntervalInput = ({ unit }) => {
-  const { interval, setInterval } = useContext(RecurringDateContext);
-  return (
-    <div className="d-flex align-items-center mb-3">
-      <label htmlFor="interval-input" className="form-label me-2">Every</label>
-      <input
-        type="number"
-        id="interval-input"
-        min="1"
-        value={interval}
-        onChange={(e) => setInterval(Math.max(1, parseInt(e.target.value) || 1))}
-        className="form-control w-auto me-2"
-        style={{ maxWidth: '80px' }}
-      />
-      <span className="text-muted">{unit}(s)</span>
-    </div>
-  );
-};
-
-const DailyOptions = () => {
-  return <IntervalInput unit="day" />;
-};
-
-const WeeklyOptions = () => {
-  const { selectedDaysOfWeek, setSelectedDaysOfWeek } = useContext(RecurringDateContext);
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const { recurrenceType, setRecurrenceType, interval, setInterval, selectedDaysOfWeek, setSelectedDaysOfWeek, monthlyPattern, setMonthlyPattern, startDate } = useContext(RecurringDateContext);
 
   const handleDayToggle = (dayIndex) => {
-    setSelectedDaysOfWeek((prev) =>
+    setSelectedDaysOfWeek(prev =>
       prev.includes(dayIndex)
-        ? prev.filter((d) => d !== dayIndex)
+        ? prev.filter(d => d !== dayIndex)
         : [...prev, dayIndex].sort((a, b) => a - b)
     );
   };
 
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
   return (
-    <div className="mb-4">
-      <IntervalInput unit="week" />
-      <div>
-        <label className="form-label d-block mb-2">Repeat on:</label>
-        <div className="d-flex flex-wrap gap-2">
-          {days.map((day, index) => (
-            <button
-              key={index}
-              className={`btn btn-sm rounded-circle d-flex align-items-center justify-content-center
-                ${selectedDaysOfWeek.includes(index) ? 'btn-primary' : 'btn-outline-secondary'}`
-              }
-              style={{ width: '40px', height: '40px' }}
-              onClick={() => handleDayToggle(index)}
-            >
-              {day}
-            </button>
-          ))}
+    <div className="mb-4 p-3 border rounded">
+      <h5 className="mb-3">Recurrence Type</h5>
+      <div className="btn-group w-100 mb-3" role="group">
+        {['daily', 'weekly', 'monthly', 'yearly'].map(type => (
+          <button
+            key={type}
+            type="button"
+            className={`btn ${recurrenceType === type ? 'btn-primary' : 'btn-outline-primary'}`}
+            onClick={() => setRecurrenceType(type)}
+          >
+            {type.charAt(0).toUpperCase() + type.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-3">
+        <label htmlFor="intervalInput" className="form-label">
+          Every {interval} {recurrenceType}
+          {interval > 1 && 's'}
+        </label>
+        <input
+          type="number"
+          id="intervalInput"
+          className="form-control"
+          value={interval}
+          onChange={(e) => setInterval(Math.max(1, parseInt(e.target.value) || 1))}
+          min="1"
+        />
+      </div>
+
+      {recurrenceType === 'weekly' && (
+        <div className="mb-3">
+          <label className="form-label">Repeat on:</label>
+          <div className="d-flex justify-content-between">
+            {dayNames.map((day, index) => (
+              <button
+                key={index}
+                type="button"
+                className={`btn btn-sm ${selectedDaysOfWeek.includes(index) ? 'btn-info text-white' : 'btn-outline-info'}`}
+                onClick={() => handleDayToggle(index)}
+              >
+                {day}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
-    </div>
-  );
-};
+      )}
 
-const MonthlyOptions = () => {
-  const { monthlyPattern, setMonthlyPattern, startDate } = useContext(RecurringDateContext);
-  const currentDayOfMonth = startDate ? startDate.getUTCDate() : 1;
-  const currentDayOfWeek = startDate ? startDate.getUTCDay() : 0; // 0 for Sunday
-
-  const daysOfWeekNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-  // Calculate the Nth occurrence of the start date's day of week in its month
-  const getNthOccurrence = useCallback((date) => {
-    if (!date) return { nth: 1, dayOfWeek: 0 };
-    const day = date.getUTCDate();
-    const dayOfWeek = date.getUTCDay();
-    const month = date.getUTCMonth();
-    const year = date.getUTCFullYear();
-
-    let count = 0;
-    for (let i = 1; i <= day; i++) {
-      const d = new Date(Date.UTC(year, month, i));
-      if (d.getUTCDay() === dayOfWeek) {
-        count++;
-      }
-    }
-    return { nth: count, dayOfWeek: dayOfWeek };
-  }, []);
-
-  const { nth, dayOfWeek } = useMemo(() => getNthOccurrence(startDate), [startDate, getNthOccurrence]);
-
-  return (
-    <div className="mb-4">
-      <IntervalInput unit="month" />
-      <div className="form-check mb-2">
-        <input
-          type="radio"
-          id="monthly-day-of-month"
-          name="monthly-pattern"
-          value="dayOfMonth"
-          checked={monthlyPattern.type === 'dayOfMonth'}
-          onChange={() => setMonthlyPattern({ type: 'dayOfMonth', day: currentDayOfMonth })}
-          className="form-check-input"
-        />
-        <label htmlFor="monthly-day-of-month" className="form-check-label">
-          Day {currentDayOfMonth} of the month
-        </label>
-      </div>
-      <div className="form-check">
-        <input
-          type="radio"
-          id="monthly-nth-day-of-week"
-          name="monthly-pattern"
-          value="nthDayOfWeek"
-          checked={monthlyPattern.type === 'nthDayOfWeek'}
-          onChange={() => setMonthlyPattern({ type: 'nthDayOfWeek', nth: nth, dayOfWeek: dayOfWeek })}
-          className="form-check-input"
-        />
-        <label htmlFor="monthly-nth-day-of-week" className="form-check-label">
-          The {nth === 1 ? 'first' : nth === 2 ? 'second' : nth === 3 ? 'third' : nth === 4 ? 'fourth' : 'last'} {daysOfWeekNames[dayOfWeek]} of the month
-        </label>
-      </div>
-    </div>
-  );
-};
-
-const YearlyOptions = () => {
-  const { startDate } = useContext(RecurringDateContext);
-  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  const displayMonth = startDate ? monthNames[startDate.getUTCMonth()] : '';
-  const displayDay = startDate ? startDate.getUTCDate() : '';
-
-  return (
-    <div className="mb-4">
-      <IntervalInput unit="year" />
-      <p className="text-muted">
-        Repeats every year on {displayMonth} {displayDay}.
-      </p>
+      {recurrenceType === 'monthly' && (
+        <div className="mb-3">
+          <label className="form-label">Monthly Pattern:</label>
+          <div className="form-check">
+            <input
+              className="form-check-input"
+              type="radio"
+              name="monthlyPattern"
+              id="dayOfMonth"
+              value="dayOfMonth"
+              checked={monthlyPattern.type === 'dayOfMonth'}
+              onChange={() => setMonthlyPattern({ type: 'dayOfMonth', day: startDate ? startDate.getUTCDate() : 1 })}
+            />
+            <label className="form-check-label" htmlFor="dayOfMonth">
+              Day {startDate ? startDate.getUTCDate() : '--'} of the month
+            </label>
+          </div>
+          <div className="form-check">
+            <input
+              className="form-check-input"
+              type="radio"
+              name="monthlyPattern"
+              id="nthDayOfWeek"
+              value="nthDayOfWeek"
+              checked={monthlyPattern.type === 'nthDayOfWeek'}
+              onChange={() => setMonthlyPattern({ type: 'nthDayOfWeek', nth: 1, dayOfWeek: 0 })} // Default to 1st Sunday
+            />
+            <label className="form-check-label" htmlFor="nthDayOfWeek">
+              The
+              <select
+                className="form-select-sm mx-1"
+                value={monthlyPattern.nth || 1}
+                onChange={(e) => setMonthlyPattern(prev => ({ ...prev, nth: parseInt(e.target.value) }))}
+                disabled={monthlyPattern.type !== 'nthDayOfWeek'}
+              >
+                {[1, 2, 3, 4, 5].map(num => (
+                  <option key={num} value={num}>
+                    {num === 1 ? 'first' : num === 2 ? 'second' : num === 3 ? 'third' : num === 4 ? 'fourth' : 'last'}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="form-select-sm mx-1"
+                value={monthlyPattern.dayOfWeek || 0}
+                onChange={(e) => setMonthlyPattern(prev => ({ ...prev, dayOfWeek: parseInt(e.target.value) }))}
+                disabled={monthlyPattern.type !== 'nthDayOfWeek'}
+              >
+                {dayNames.map((day, index) => (
+                  <option key={index} value={index}>{day}</option>
+                ))}
+              </select>
+              of the month
+            </label>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -450,25 +319,26 @@ const DateRangePicker = () => {
   const { startDate, setStartDate, endDate, setEndDate } = useContext(RecurringDateContext);
 
   return (
-    <div className="row mb-4">
-      <div className="col-md-6 mb-3 mb-md-0">
-        <label htmlFor="start-date" className="form-label">Start Date:</label>
+    <div className="mb-4 p-3 border rounded">
+      <h5 className="mb-3">Date Range</h5>
+      <div className="mb-3">
+        <label htmlFor="startDate" className="form-label">Start Date:</label>
         <input
           type="date"
-          id="start-date"
+          id="startDate"
+          className="form-control"
           value={formatDate(startDate)}
           onChange={(e) => setStartDate(parseDate(e.target.value))}
-          className="form-control"
         />
       </div>
-      <div className="col-md-6">
-        <label htmlFor="end-date" className="form-label">End Date (Optional):</label>
+      <div className="mb-3">
+        <label htmlFor="endDate" className="form-label">End Date (Optional):</label>
         <input
           type="date"
-          id="end-date"
-          value={formatDate(endDate)}
-          onChange={(e) => setEndDate(parseDate(e.target.value))}
+          id="endDate"
           className="form-control"
+          value={endDate ? formatDate(endDate) : ''}
+          onChange={(e) => setEndDate(parseDate(e.target.value))}
         />
       </div>
     </div>
@@ -477,181 +347,132 @@ const DateRangePicker = () => {
 
 const CalendarPreview = () => {
   const { startDate, generatedDates } = useContext(RecurringDateContext);
-
-  const [currentMonth, setCurrentMonth] = useState(startDate ? startDate.getUTCMonth() : new Date().getUTCMonth());
-  const [currentYear, setCurrentYear] = useState(startDate ? startDate.getUTCFullYear() : new Date().getUTCFullYear());
+  const [currentMonth, setCurrentMonth] = useState(new Date(Date.UTC(new Date().getFullYear(), new Date().getMonth(), 1)));
 
   useEffect(() => {
     if (startDate) {
-      setCurrentMonth(startDate.getUTCMonth());
-      setCurrentYear(startDate.getUTCFullYear());
+      setCurrentMonth(new Date(Date.UTC(startDate.getFullYear(), startDate.getMonth(), 1)));
     }
   }, [startDate]);
 
-  const daysInMonth = (year, month) => new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  const firstDayOfMonth = (year, month) => new Date(Date.UTC(year, month, 1)).getUTCDay(); // 0-6, Sun-Sat
-
-  const renderCalendarDays = () => {
-    const totalDays = daysInMonth(currentYear, currentMonth);
-    const startDay = firstDayOfMonth(currentYear, currentMonth);
-    const days = [];
-
-    // Fill leading empty days
-    for (let i = 0; i < startDay; i++) {
-      days.push(<div key={`empty-${i}`} className="col border-0"></div>);
-    }
-
-    // Fill days of the month
-    for (let day = 1; day <= totalDays; day++) {
-      const date = new Date(Date.UTC(currentYear, currentMonth, day));
-      const isHighlighted = generatedDates.some(
-        (d) => d.getUTCFullYear() === date.getUTCFullYear() &&
-               d.getUTCMonth() === date.getUTCMonth() &&
-               d.getUTCDate() === date.getUTCDate()
-      );
-      const isStartDate = startDate &&
-                          startDate.getUTCFullYear() === date.getUTCFullYear() &&
-                          startDate.getUTCMonth() === date.getUTCMonth() &&
-                          startDate.getUTCDate() === date.getUTCDate();
-
-      days.push(
-        <div
-          key={`${currentYear}-${currentMonth}-${day}`}
-          className={`col d-flex align-items-center justify-content-center rounded-lg fw-semibold
-            ${isHighlighted ? 'bg-primary text-white shadow' : 'text-dark'}
-            ${isStartDate ? 'border border-success border-2' : ''}
-            ${!isHighlighted && !isStartDate ? 'bg-light' : ''}
-          `}
-          style={{ height: '40px' }}
-        >
-          {day}
-        </div>
-      );
-    }
-    return days;
-  };
-
-  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  const dayNamesShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-  const handlePrevMonth = () => {
-    setCurrentMonth((prev) => {
-      if (prev === 0) {
-        setCurrentYear(currentYear - 1);
-        return 11;
-      }
-      return prev - 1;
+  const goToPreviousMonth = () => {
+    setCurrentMonth(prev => {
+      const newMonth = new Date(prev.getTime());
+      newMonth.setUTCMonth(newMonth.getUTCMonth() - 1);
+      return newMonth;
     });
   };
 
-  const handleNextMonth = () => {
-    setCurrentMonth((prev) => {
-      if (prev === 11) {
-        setCurrentYear(currentYear + 1);
-        return 0;
-      }
-      return prev + 1;
+  const goToNextMonth = () => {
+    setCurrentMonth(prev => {
+      const newMonth = new Date(prev.getTime());
+      newMonth.setUTCMonth(newMonth.getUTCMonth() + 1);
+      return newMonth;
     });
   };
+
+  const firstDayOfMonth = new Date(Date.UTC(currentMonth.getFullYear(), currentMonth.getMonth(), 1));
+  const daysInMonth = new Date(Date.UTC(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0)).getUTCDate();
+  const startDayOfWeek = firstDayOfMonth.getUTCDay(); // 0 for Sunday, 6 for Saturday
+
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const monthName = currentMonth.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+  const calendarDays = [];
+  // Add empty cells for days before the 1st of the month
+  for (let i = 0; i < startDayOfWeek; i++) {
+    calendarDays.push(<div key={`empty-${i}`} className="col-calendar-day"></div>);
+  }
+
+  // Add actual date cells
+  for (let day = 1; day <= daysInMonth; day++) {
+    const date = new Date(Date.UTC(currentMonth.getFullYear(), currentMonth.getMonth(), day));
+    const isRecurring = generatedDates.some(d => d.getUTCFullYear() === date.getUTCFullYear() && d.getUTCMonth() === date.getUTCMonth() && d.getUTCDate() === date.getUTCDate());
+    const isStartDate = startDate && date.getUTCFullYear() === startDate.getUTCFullYear() && date.getUTCMonth() === startDate.getUTCMonth() && date.getUTCDate() === startDate.getUTCDate();
+
+    let cellClasses = "col-calendar-day rounded-md";
+    if (isRecurring) {
+      cellClasses += " bg-primary text-white";
+    }
+    if (isStartDate) {
+      cellClasses += " border-2 border-success";
+    }
+
+    calendarDays.push(
+      <div key={day} className={cellClasses}>
+        {day}
+      </div>
+    );
+  }
 
   return (
-    <div className="card p-4 mb-4">
-      <h3 className="card-title h5 text-dark mb-3">Calendar Preview</h3>
+    <div className="mb-4 p-3 border rounded">
+      <h5 className="mb-3">Calendar Preview</h5>
       <div className="d-flex justify-content-between align-items-center mb-3">
-        <button onClick={handlePrevMonth} className="btn btn-light rounded-circle">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="bi bi-chevron-left" viewBox="0 0 16 16">
-            <path fillRule="evenodd" d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"/>
-          </svg>
+        <button className="btn btn-sm btn-outline-secondary" onClick={goToPreviousMonth}>
+          &lt;
         </button>
-        <span className="h4 fw-bold text-dark">
-          {monthNames[currentMonth]} {currentYear}
-        </span>
-        <button onClick={handleNextMonth} className="btn btn-light rounded-circle">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="bi bi-chevron-right" viewBox="0 0 16 16">
-            <path fillRule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"/>
-          </svg>
+        <h6 className="mb-0">{monthName}</h6>
+        <button className="btn btn-sm btn-outline-secondary" onClick={goToNextMonth}>
+          &gt;
         </button>
       </div>
-      <div className="row row-cols-7 g-1 text-center text-muted fw-semibold mb-2">
-        {dayNamesShort.map((day, index) => (
-          <div key={index} className="col">
+      <div className="calendar-grid row row-cols-7 g-0">
+        {/* Day headers */}
+        {dayNames.map(day => (
+          <div key={day} className="col-calendar-day fw-bold text-center py-2">
             {day}
           </div>
         ))}
+        {/* Dates */}
+        {calendarDays}
       </div>
-      <div className="row row-cols-7 g-1">
-        {renderCalendarDays()}
-      </div>
-      <div className="mt-4 small text-muted">
-        <p><span className="badge bg-primary me-2"></span>Highlighted dates are recurring dates.</p>
-        <p><span className="badge bg-success border border-success border-2 me-2" style={{ width: '1rem', height: '1rem' }}></span>Bordered date is the start date.</p>
-      </div>
+      <small className="d-block mt-3">Highlighted dates are recurring dates.</small>
+      <small className="d-block">Bordered date is the start date.</small>
     </div>
   );
 };
 
-// --- Main Component ---
-const RecurringDatePicker = () => {
-  const { recurrenceType, generatedDates } = useContext(RecurringDateContext);
-
-  const renderRecurrenceOptions = () => {
-    switch (recurrenceType) {
-      case 'daily':
-        return <DailyOptions />;
-      case 'weekly':
-        return <WeeklyOptions />;
-      case 'monthly':
-        return <MonthlyOptions />;
-      case 'yearly':
-        return <YearlyOptions />;
-      default:
-        return null;
-    }
-  };
+const GeneratedDatesList = () => {
+  const { generatedDates } = useContext(RecurringDateContext);
 
   return (
-    <div className="container py-5">
-      <div className="card shadow-lg p-4 mx-auto" style={{ maxWidth: '600px' }}>
-        <h2 className="card-title text-center mb-4">Recurring Date Picker</h2>
-
-        <DateRangePicker />
-
-        <div className="mb-4">
-          <label className="form-label d-block mb-2">Recurrence Pattern:</label>
-          <RecurrenceOptions />
-          <div className="card card-body bg-light border-0">
-            {renderRecurrenceOptions()}
-          </div>
-        </div>
-
-        <CalendarPreview />
-
-        <div className="card bg-info bg-opacity-10 border border-info mt-4">
-          <div className="card-body">
-            <h3 className="card-title h5 text-info mb-2">Selected Recurring Dates:</h3>
-            <ul className="list-unstyled text-info small" style={{ maxHeight: '150px', overflowY: 'auto' }}>
-              {generatedDates.length > 0 ? (
-                generatedDates.map((date, index) => (
-                  <li key={index}>{formatDate(date)}</li>
-                ))
-              ) : (
-                <li>No dates generated. Please select a start date and recurrence pattern.</li>
-              )}
-            </ul>
-          </div>
-        </div>
-      </div>
+    <div className="mb-4 p-3 border rounded">
+      <h5 className="mb-3">Selected Recurring Dates</h5>
+      {generatedDates.length > 0 ? (
+        <ul className="list-group">
+          {generatedDates.map((date, index) => (
+            <li key={index} className="list-group-item">
+              {formatDate(date)}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-muted">No recurring dates generated yet. Please select options above.</p>
+      )}
     </div>
   );
 };
 
-// --- App Component (Root) ---
-export default function App() {
+// --- Main App Component ---
+function App() {
   return (
     <RecurringDateProvider>
-      <div className="bg-light min-vh-100 d-flex align-items-center justify-content-center">
-        <RecurringDatePicker />
+      <div className="App container mt-5">
+        <h1 className="text-center mb-4">Recurring Date Picker</h1>
+        <div className="row">
+          <div className="col-md-6">
+            <RecurrenceOptions />
+            <DateRangePicker />
+          </div>
+          <div className="col-md-6">
+            <CalendarPreview />
+            <GeneratedDatesList />
+          </div>
+        </div>
       </div>
     </RecurringDateProvider>
   );
 }
+
+export default App;
